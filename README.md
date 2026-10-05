@@ -1,5 +1,104 @@
 # Technical Challenge — Distributed Wagering Processor
 
+## Documentação
+
+- [Arquitetura e fluxo do sistema](ARCHITECTURE.md) — visão técnica, trade-offs e limites.
+- [Decisões arquiteturais](docs/architecture/DECISIONS.md) — decisões e consequências.
+- [Rastreabilidade dos requisitos](docs/development/TRACEABILITY.md) — requisito, implementação e evidência.
+- [Testes de concorrência](docs/testing/CONCURRENCY_TESTS.md) — wallets, duplicatas e publishers concorrentes.
+- [Recuperação após crash](docs/testing/CRASH_RECOVERY_TESTS.md) — SIGKILL e recuperação SQS/Outbox.
+- [Testes de mensageria](docs/testing/MESSAGING_TESTS.md) e [runtime operacional](docs/operations/MESSAGING_RUNTIME.md).
+- [Observabilidade](docs/operations/OBSERVABILITY.md), [changelog](CHANGELOG.md) e [log de implementação](docs/development/IMPLEMENTATION_LOG.md).
+
+## Executar a implementação
+
+Antes de iniciar, copie `.env.example` para `.env` e preencha a configuração local. O `.env` é ignorado pelo Git; não versione credenciais. Compose, aplicação, testes de integração e scripts leem os valores do ambiente, sem credenciais padrão no código.
+
+Para apresentar a arquitetura e o fluxo, inicie a stack e abra
+[http://localhost:3000/demo](http://localhost:3000/demo). O diagrama é clicável:
+cada componente explica seu papel, a razão da escolha e seus trade-offs. A página
+também cria uma wallet local, envia uma transação à API, exibe o retorno HTTP/JSON
+e permite repetir a chamada para observar idempotência. Ela complementa este
+README; os detalhes completos de decisões e invariantes permanecem na documentação
+técnica.
+
+Pré-requisitos: Docker Desktop com Compose v2. Bun local é necessário somente
+para executar testes e comandos fora dos containers.
+
+```bash
+docker compose up --build -d
+docker compose ps
+curl http://localhost:3000/health/live
+curl http://localhost:3000/health/ready
+```
+
+O Compose inicia PostgreSQL 16, provisiona a role restrita definida por `APP_DB_USER`, LocalStack 3.8.1, Terraform, um migrator one-shot e a aplicação. Migrations usam a role administrativa local; o container NestJS recebe somente a role de runtime, sem privilégios de superusuário e sem permissão de UPDATE/DELETE no ledger. O
+Terraform cria as três filas FIFO, a relação da DLQ e a política de redrive. A aplicação
+aguarda as dependências saudáveis e o migrator concluir antes de iniciar a
+API, o consumer SQS, o worker de referências e o publisher Outbox. O container
+roda como usuário não root e possui health check de readiness.
+As portas publicadas da API, PostgreSQL e LocalStack ficam vinculadas a
+`127.0.0.1`; as credenciais do Compose são apenas para desenvolvimento local.
+
+Filas criadas automaticamente pelo Terraform em [infra/terraform/main.tf](infra/terraform/main.tf):
+
+- `wager-transactions.fifo` com redrive após cinco recebimentos;
+- `wager-transactions-dlq.fifo`;
+- `wager-events.fifo`.
+
+O state local do Terraform fica no volume `terraform-state` e os plugins ficam
+no volume `terraform-plugins`. Para validar a infraestrutura sem subir a API:
+
+```bash
+docker compose up terraform
+docker compose run --rm --entrypoint /bin/sh terraform -c \
+  'terraform plan -input=false -state=/state/terraform.tfstate'
+```
+
+O segundo comando deve terminar com `No changes`.
+
+Prova rápida do fluxo containerizado, incluindo API, SQS, commit financeiro e
+Outbox (a fixture criada pelo comando é removida ao terminar):
+
+```bash
+bun --env-file=.env run test:compose
+```
+
+Testes locais usam as dependências do Compose e devem rodar sem o serviço `app`,
+para que o publisher contínuo não capture as Outboxes das suítes:
+
+```bash
+docker compose stop app
+bun install --frozen-lockfile
+bun --env-file=.env run db:migration:up
+bun --env-file=.env test
+bun --env-file=.env run test:messaging
+bun --env-file=.env run test:concurrency
+bun --env-file=.env run test:recovery
+```
+
+O teste de carga usa o arquivo de ambiente:
+
+```bash
+bun --env-file=.env run test:load
+```
+
+Os testes especializados também fazem parte da suíte integral; os comandos separados
+facilitam a demonstração. Para reiniciar a stack completa:
+
+O `.env.example` contém apenas os nomes das variáveis, sem valores. Configure
+credenciais locais no `.env` ignorado pelo Git; não reutilize credenciais locais
+em produção. Em produção, use um gestor de segredos e a cadeia de credenciais
+da plataforma (por exemplo, IAM role para SQS).
+
+```bash
+docker compose up -d app
+docker compose down
+```
+
+`docker compose down` preserva os volumes. Use remoção de volumes somente quando
+quiser descartar deliberadamente o banco e o estado local do LocalStack.
+
 ## Bem-vindo à Jungle Gaming 🦧
 
 A **Jungle Gaming** é uma software house especializada em iGaming — desenvolvemos plataformas de cassino online com tecnologia de ponta: NestJS, Bun, TanStack, DDD e arquitetura orientada a eventos. Somos apaixonados por engenharia de software e acreditamos que grandes produtos nascem de grandes times.
@@ -36,6 +135,8 @@ Se você implementar, a expectativa é **integrar um Identity Provider externo**
 **Keycloak** (mais comum no mercado, OIDC completo) e **Zitadel** (mais leve, API-first) são pontos de partida razoáveis; qualquer IdP equivalente serve.
 
 Se você optar por **não** implementar, isso é aceito: documente a decisão no `ARCHITECTURE.md`, descreva o desenho que adotaria e deixe o ponto de extensão explícito no código (por exemplo um `AuthGuard` no-op ou um `ProviderIdentityPort`).
+
+Neste projeto, o `NoopAuthGuard` atende ao escopo do exercício e **não autentica nem autoriza usuários**. Não publique esta API em rede confiável ou produção antes de substituí-lo por autenticação/autorização real e proteger as credenciais dos provedores.
 
 Escopo do que a autenticação **não** cobre neste desafio: os endpoints de health ficam abertos, e mensagens vindas da fila são tratadas como canal interno confiável — mas a identidade do provedor contida na mensagem continua sujeita às mesmas validações de domínio.
 
@@ -744,3 +845,13 @@ wallet.balance == saldo reconstruído pelo ledger
 ### Diferenciais opcionais
 
 Teste de carga também conta como diferencial. Se fizer, exponha como `bun run test:load` e registre ambiente, metodologia, throughput, p50/p95/p99, taxa de erro, conflitos de concorrência e outbox lag. Não há meta de RPS — a qualidade do experimento e a honestidade da análise pesam mais que o número bruto.
+
+O runner local `bun --env-file=.env run test:load` envia 100 transações com concorrência 5 e depois 300 com concorrência 15 para uma única wallet, medindo latência HTTP, throughput e drenagem do Outbox; também confere saldo/versão finais. Requer a API local saudável e `LOAD_ADMIN_DATABASE_URL` configurada no arquivo `.env` local (ignorado pelo Git) para apontar ao PostgreSQL de desenvolvimento. Confirme também que `LOAD_BASE_URL` aponta apenas para a API local: o ensaio cria transações e usa a conexão administrativa para limpar os dados da execução. Usa um player/provider exclusivos e remove apenas os dados daquele ensaio após aguardar a publicação dos eventos. O publisher claima até 100 mensagens por ciclo e envia até 10 grupos distintos por chamada SQS, sem ultrapassar a ordem por agregado. Execute:
+
+Resultados e interpretação do ensaio local registrado: [docs/testing/LOAD_TESTS.md](docs/testing/LOAD_TESTS.md).
+
+```sh
+bun --env-file=.env run test:load
+```
+
+Este cenário mede contenção de uma hot wallet em ambiente local, não uma capacidade de produção. Não simula rede externa, múltiplas instâncias distribuídas nem volume de tráfego sustentado.

@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Wagering Processor — demonstração</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0b1011; --panel:#121a1b; --panel2:#182223; --line:#293637; --text:#edf4ef; --muted:#9aaba4; --green:#b7ef72; --mint:#76dbbd; --red:#ff927f; --amber:#f1c56f; --mono:ui-monospace,SFMono-Regular,Menlo,monospace; --sans:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif; }
+    * { box-sizing:border-box }
+    body { margin:0; background:radial-gradient(ellipse at 8% 0%,#182725 0,transparent 35%),var(--bg); color:var(--text); font:15px/1.55 var(--sans) }
+    main { width:min(1120px,calc(100% - 36px)); margin:auto; padding:36px 0 64px }
+    .top { display:flex; justify-content:space-between; gap:20px; align-items:center; margin-bottom:50px }
+    .brand { color:var(--green); font:700 12px var(--mono); letter-spacing:.12em; text-transform:uppercase }
+    .api-state { display:flex; align-items:center; gap:9px; color:var(--muted); font:12px var(--mono) }
+    .dot { width:8px;height:8px;border-radius:100%;background:#71817a }.dot.ok{background:var(--green);box-shadow:0 0 12px #b7ef7280}.dot.bad{background:var(--red)}
+    h1 { max-width:760px; margin:12px 0; font-size:clamp(34px,6vw,64px); line-height:1.02; letter-spacing:-.055em; font-weight:650 }
+    h1 span { color:var(--green) }
+    .intro { max-width:710px; color:var(--muted); font-size:17px }
+    .eyebrow { color:var(--mint); font:11px var(--mono); letter-spacing:.13em; text-transform:uppercase }
+    .architecture { display:grid; grid-template-columns:minmax(0,1.55fr) minmax(260px,.8fr); gap:14px; align-items:stretch }
+    .map { padding:18px; border:1px solid var(--line); border-radius:14px; background:linear-gradient(155deg,#131d1e,#0e1415) }
+    .map-label { color:var(--muted); font:10px var(--mono); letter-spacing:.12em; text-transform:uppercase; margin:2px 0 9px }
+    .map-row { display:grid; grid-template-columns:1fr 1fr 1.2fr 1.2fr; align-items:stretch; gap:9px }
+    .map-row.two { grid-template-columns:1fr 1fr }
+    .map-node { min-height:77px; padding:11px; text-align:left; background:#172121; border:1px solid #31403e; border-radius:9px; color:var(--text); transition:border-color .15s,background .15s,transform .15s }
+    .map-node:hover { border-color:#648273; transform:translateY(-1px) }
+    .map-node[aria-pressed="true"] { border-color:var(--green); background:#1d2b23; box-shadow:inset 0 0 0 1px #b7ef7240 }
+    .map-node strong { display:block; font-size:12px; line-height:1.3 }
+    .map-node small { display:block; margin-top:5px; color:var(--muted); font:10px/1.35 var(--mono) }
+    .map-node .tag { display:block; margin-bottom:5px; color:var(--mint); font:9px var(--mono); text-transform:uppercase; letter-spacing:.08em }
+    .map-arrow { min-height:25px; display:flex; align-items:center; justify-content:center; color:#9ab29f; font:10px var(--mono); text-align:center }
+    .map-arrow span { padding:2px 7px; border-radius:20px; background:#0d1414 }
+    .map-arrow.down { min-height:29px }
+    .map-arrow.down:before { content:"↓"; color:var(--green); margin-right:7px; font-size:14px }
+    .map-foot { margin-top:12px; padding:10px 11px; border-top:1px solid var(--line); color:var(--muted); font-size:11px }
+    .map-foot b { color:var(--amber) }
+    .detail-card { padding:19px; border:1px solid #43564b; border-radius:14px; background:linear-gradient(150deg,#1a2822,#111819); min-height:100% }
+    .detail-card .detail-label { color:var(--green); font:10px var(--mono); letter-spacing:.1em; text-transform:uppercase }
+    .detail-card h3 { margin:9px 0 12px; font-size:19px; letter-spacing:-.03em }
+    .detail-card h4 { margin:16px 0 4px; color:var(--mint); font:10px var(--mono); letter-spacing:.09em; text-transform:uppercase }
+    .detail-card p { margin:0; color:#bdcbc4; font-size:12px; line-height:1.55 }
+    .design-note { color:var(--muted); font-size:11px; margin-top:12px }
+    .section-head { margin:48px 0 17px; display:flex; justify-content:space-between; align-items:end; gap:16px }
+    h2 { margin:0; font-size:20px; letter-spacing:-.025em }
+    .small { color:var(--muted); font-size:12px }
+    .flow { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; position:relative }
+    .step { min-height:145px; position:relative; padding:16px; background:linear-gradient(150deg,var(--panel2),var(--panel)); border:1px solid var(--line); border-radius:12px }
+    .step:not(:last-child):after { content:'→'; position:absolute; z-index:1; right:-11px; top:22px; color:var(--green); font:15px var(--mono) }
+    .num { color:var(--green); font:11px var(--mono) }
+    .step b { display:block; margin:12px 0 5px; font-size:14px }
+    .step p { margin:0; color:var(--muted); font-size:12px; line-height:1.45 }
+    .async { margin-top:10px; padding:12px 16px; border:1px dashed #40534d; border-radius:10px; color:var(--muted); font-size:12px }
+    .async strong { color:var(--mint) }
+    .demo-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(320px,.9fr); gap:16px; align-items:start }
+    .card { border:1px solid var(--line); border-radius:14px; background:linear-gradient(160deg,#141e1f,#101617); padding:20px }
+    .card h3 { font-size:16px; margin:0 0 5px }
+    .card > p { color:var(--muted); font-size:12px; margin:0 0 18px }
+    label { display:block; margin:13px 0 6px; color:var(--muted); font-size:12px }
+    input,select { width:100%; padding:10px 11px; color:var(--text); background:#0c1213; border:1px solid #354344; border-radius:7px; font:13px var(--mono); outline:none }
+    input:focus,select:focus { border-color:var(--mint); box-shadow:0 0 0 2px #76dbbd20 }
+    .row { display:grid; grid-template-columns:1fr 1fr; gap:12px }
+    .buttons { display:flex; flex-wrap:wrap; gap:9px; margin-top:18px }
+    button { border:1px solid #40504b; background:#1b2826; color:var(--text); border-radius:7px; padding:10px 13px; font:600 12px var(--sans); cursor:pointer }
+    button.primary { background:var(--green); border-color:var(--green); color:#14200c }
+    button:disabled { opacity:.5; cursor:wait }
+    .notice { margin-top:13px; color:var(--muted); font-size:11px }
+    pre { overflow:auto; max-height:460px; margin:0; padding:16px; background:#090e0f; border:1px solid var(--line); border-radius:9px; color:#c8d9cf; font:12px/1.65 var(--mono); white-space:pre-wrap; overflow-wrap:anywhere }
+    .response-meta { display:flex; justify-content:space-between; gap:10px; margin:0 0 10px; font:11px var(--mono); color:var(--muted) }
+    .http { color:var(--green) }.http.error{color:var(--red)}
+    .callout { border-left:2px solid var(--amber); padding:10px 13px; margin-top:14px; background:#f1c56f0b; color:var(--muted); font-size:12px }
+    footer { margin-top:38px; border-top:1px solid var(--line); padding-top:17px; color:var(--muted); font-size:11px }
+    footer a { color:var(--mint) }
+    @media(max-width:780px){ .flow{grid-template-columns:1fr 1fr}.step:not(:last-child):after{display:none}.demo-grid{grid-template-columns:1fr} }
+    @media(max-width:900px){ .architecture{grid-template-columns:1fr}.detail-card{min-height:0}.map-row{grid-template-columns:1fr 1fr}.map-node{min-height:70px} }
+    @media(max-width:480px){main{width:calc(100% - 24px);padding-top:22px}.top{margin-bottom:35px}.flow{grid-template-columns:1fr}.step{min-height:auto}.row{grid-template-columns:1fr}.section-head{align-items:start;flex-direction:column} }
+  </style>
+</head>
+<body>
+<main>
+  <header class="top">
+    <div class="brand">Jungle Gaming · Technical Challenge</div>
+    <div class="api-state"><span class="dot" id="health-dot"></span><span id="health-label">verificando API…</span></div>
+  </header>
+
+  <div class="eyebrow">Distributed wagering processor</div>
+  <h1>Uma operação.<br><span>Invariantes financeiras.</span></h1>
+  <p class="intro">Demonstração interativa do caminho de uma transação: da entrada HTTP ou SQS ao commit atômico dos registros aplicáveis e à publicação posterior dos eventos.</p>
+
+  <div class="section-head"><div><div class="eyebrow">Visão arquitetural</div><h2>Componentes, caminhos e garantias</h2></div><div class="small">Clique em um bloco para ver a decisão e o motivo</div></div>
+  <section class="architecture" aria-label="Diagrama interativo da arquitetura">
+    <div class="map">
+      <div class="map-label">Entradas · dois caminhos, um caso de uso</div>
+      <div class="map-row">
+        <button class="map-node" type="button" aria-pressed="false" data-title="API HTTP" data-role="Recebe a operação do provedor, valida o contrato e exige Idempotency-Key. A resposta é devolvida depois que o caso de uso termina." data-why="Uma interface síncrona permite ao provedor receber a decisão: processada, pendente ou rejeitada." data-tradeoff="A chamada aguarda o banco; indisponibilidade transitória resulta em erro retryable. O endpoint não implementa autenticação real neste desafio."><span class="tag">Entrada síncrona</span><strong>API NestJS</strong><small>POST /wagering/transactions</small></button>
+        <button class="map-node" type="button" aria-pressed="false" data-title="Consumidor SQS + Inbox" data-role="Converte mensagens da fila para o mesmo ProcessBetUseCase. Registra consumer_name, message_id e payloadHash na Inbox na transação; envia ACK somente após o commit." data-why="SQS entrega pelo menos uma vez. A Inbox persistente reconhece redelivery após crash sem depender da memória do processo." data-tradeoff="Inbox deduplica identidade da mensagem; a chave financeira é uma garantia separada. Redelivery é possível, segundo efeito financeiro não."><span class="tag">Entrada assíncrona</span><strong>Consumer SQS</strong><small>Inbox · ACK após commit</small></button>
+        <div class="map-arrow"><span>ambas →</span></div>
+        <button class="map-node" type="button" aria-pressed="false" data-title="Caso de uso financeiro" data-role="ProcessBetUseCase coordena idempotência, referências, lock de wallet, saldo, ledger e eventos. É compartilhado pela entrada HTTP e SQS." data-why="Uma única regra de aplicação evita que os adaptadores implementem versões diferentes da mesma regra financeira." data-tradeoff="O caso de uso coordena; a autoridade final continua no PostgreSQL, onde constraints e transações também protegem concorrência entre processos."><span class="tag">Núcleo comum</span><strong>ProcessBetUseCase</strong><small>Regra financeira única</small></button>
+      </div>
+      <div class="map-arrow down"><span>mesmo caso de uso · uma unidade transacional</span></div>
+      <div class="map-row two">
+        <button class="map-node" type="button" aria-pressed="true" data-title="PostgreSQL: autoridade financeira" data-role="Uma transação SQL grava a wager e a Outbox; quando há movimento financeiro, também atualiza a wallet e acrescenta o lançamento imutável no ledger. Entrada via SQS grava a Inbox nessa mesma transação." data-why="ACID, NUMERIC, constraints e SELECT FOR UPDATE por wallet impõem invariantes no armazenamento. Wallets diferentes podem progredir em paralelo." data-tradeoff="O lock serializa operações da mesma wallet e pode elevar latência de uma carteira muito disputada. Réplicas primary/secondary podem ajudar leitura e disponibilidade, mas não substituem constraints nem coordenação da escrita primária; neste desenho, PostgreSQL é a autoridade."><span class="tag">Commit atômico</span><strong>Wallet · wager · ledger</strong><small>NUMERIC · constraints · row lock</small></button>
+        <button class="map-node" type="button" aria-pressed="false" data-title="Money: decimal exato" data-role="O domínio recebe amount como string decimal, calcula com decimal.js e persiste em NUMERIC(15,2)." data-why="Ponto flutuante binário não representa todos os centavos exatamente; exatidão é requisito para saldo e reconciliação." data-tradeoff="O contrato mantém strings decimais e rejeita formato/escala inválidos. Dinheiro não é serializado como number JavaScript."><span class="tag">Precisão monetária</span><strong>Money · decimal.js</strong><small>String decimal → NUMERIC(15,2)</small></button>
+      </div>
+      <div class="map-arrow down"><span>Outbox só é publicada depois do commit</span></div>
+      <div class="map-row">
+        <button class="map-node" type="button" aria-pressed="false" data-title="Transactional Outbox" data-role="Eventos de processamento e saldo são escritos no mesmo commit financeiro. Permanecem pendentes até o publisher confirmar o envio." data-why="Evita o dual-write inseguro: confirmar saldo e falhar antes de publicar não perde a intenção do evento." data-tradeoff="Entrega é at-least-once. Se o processo cair após ACK do SQS e antes de marcar published_at, o evento pode ser reenviado; consumidores downstream precisam ser idempotentes."><span class="tag">Persistido no SQL</span><strong>Outbox</strong><small>Evento durável · lease</small></button>
+        <div class="map-arrow"><span>poll</span></div>
+        <button class="map-node" type="button" aria-pressed="false" data-title="Publisher → SQS de eventos" data-role="Worker reclama registros pendentes usando SKIP LOCKED, publica na fila FIFO e marca published_at após confirmação. Falhas recebem retry." data-why="Desacopla confirmação financeira da disponibilidade do broker e recupera publicações após reinício." data-tradeoff="A fila de saída é separada da fila de comandos para evitar consumir eventos como novas apostas. FIFO não elimina duplicatas de publicação."><span class="tag">Entrega assíncrona</span><strong>Fila SQS de eventos</strong><small>FIFO · redelivery possível</small></button>
+      </div>
+      <div class="map-foot"><b>Fluxos auxiliares:</b> referências ausentes ficam PENDING_REFERENCE e são reavaliadas pelo worker; health/readiness e métricas observam a operação.</div>
+    </div>
+    <aside class="detail-card" aria-live="polite" aria-atomic="true">
+      <div class="detail-label">Decisão selecionada</div>
+      <h3 id="detail-title">PostgreSQL: autoridade financeira</h3>
+      <h4>Como se comporta</h4><p id="detail-role">Uma transação SQL grava a wager e a Outbox; quando há movimento financeiro, também atualiza a wallet e acrescenta o lançamento imutável no ledger. Entrada via SQS grava a Inbox nessa mesma transação.</p>
+      <h4>Por que essa escolha</h4><p id="detail-why">ACID, NUMERIC, constraints e SELECT FOR UPDATE por wallet impõem invariantes no armazenamento. Wallets diferentes podem progredir em paralelo.</p>
+      <h4>Trade-off / limite</h4><p id="detail-tradeoff">O lock serializa operações da mesma wallet e pode elevar latência de uma carteira muito disputada. Réplicas primary/secondary podem ajudar leitura e disponibilidade, mas não substituem constraints nem coordenação da escrita primária; neste desenho, PostgreSQL é a autoridade.</p>
+      <div class="design-note">O diagrama reflete a implementação do desafio; não presume infraestrutura de produção ainda não construída.</div>
+    </aside>
+  </section>
+
+  <div class="section-head"><div><div class="eyebrow">01 / fluxo</div><h2>O que acontece ao enviar uma aposta</h2></div><div class="small">API síncrona · eventos assíncronos</div></div>
+  <section class="flow" aria-label="Fluxo de processamento">
+    <article class="step"><span class="num">01 · HTTP</span><b>Validação</b><p>Contrato, moeda e chave de idempotência são verificados.</p></article>
+    <article class="step"><span class="num">02 · DOMÍNIO</span><b>Regra financeira</b><p>Resolve referência, tipo da operação e resultado de negócio.</p></article>
+    <article class="step"><span class="num">03 · POSTGRES</span><b>Lock da wallet</b><p>Serializa alterações concorrentes na mesma carteira.</p></article>
+    <article class="step"><span class="num">04 · ATÔMICO</span><b>Commit SQL</b><p>Registros aplicáveis: transação, Inbox (SQS), saldo/ledger e Outbox.</p></article>
+    <article class="step"><span class="num">05 · HTTP</span><b>Resposta</b><p>Retorna status, saldo observado e indicador de replay.</p></article>
+  </section>
+  <div class="async"><strong>Depois do commit:</strong> o publisher lê a Outbox e publica eventos na fila FIFO do SQS. Falhas e redelivery são tratados sem repetir o efeito financeiro.</div>
+
+  <div class="section-head"><div><div class="eyebrow">02 / laboratório</div><h2>Faça uma chamada real à API local</h2></div><div class="small">Base: mesma origem · localhost:3000</div></div>
+  <section class="demo-grid">
+    <div class="card">
+      <h3>Enviar transação de aposta</h3>
+      <p>Crie uma wallet de demonstração e envie BETs. O replay reutiliza exatamente o mesmo payload e a mesma chave.</p>
+      <label for="wallet-id">Wallet ID</label><input id="wallet-id" autocomplete="off" placeholder="Crie uma wallet ou informe UUID existente">
+      <label for="player-id">Player ID</label><input id="player-id" autocomplete="off" placeholder="UUID do jogador">
+      <div class="row">
+        <div><label for="amount">Valor (BRL)</label><input id="amount" inputmode="decimal" value="10.00"></div>
+        <div><label for="kind">Operação</label><select id="kind"><option>BET</option><option>WIN</option><option>LOSS</option><option>REFUND</option><option>ROLLBACK</option></select></div>
+      </div>
+      <div class="buttons">
+        <button id="create-wallet" class="primary" type="button">Criar wallet · saldo R$ 100</button>
+        <button id="send-wager" type="button">Enviar transação</button>
+        <button id="replay" type="button">Reenviar (idempotência)</button>
+      </div>
+      <div class="callout">Ambiente local de demonstração. As chamadas gravam dados no banco local do Compose; use apenas dados de teste.</div>
+    </div>
+    <div class="card">
+      <div class="response-meta"><span>RETORNO DA API</span><span id="http-status">—</span></div>
+      <pre id="response" aria-live="polite">{ "info": "A resposta HTTP aparecerá aqui." }</pre>
+      <div class="notice">O replay demonstra idempotência persistente: resposta original, sem novo débito.</div>
+    </div>
+  </section>
+  <footer>Este laboratório complementa README.md e ARCHITECTURE.md. O endpoint de demonstração não substitui autenticação nem é destinado a produção.</footer>
+</main>
+<script>
+(() => {
+  const el = (id) => document.getElementById(id);
+  document.querySelectorAll(".map-node").forEach((node) => {
+    node.addEventListener("click", () => {
+      document.querySelectorAll(".map-node").forEach((item) => item.setAttribute("aria-pressed", String(item === node)));
+      el("detail-title").textContent = node.dataset.title;
+      el("detail-role").textContent = node.dataset.role;
+      el("detail-why").textContent = node.dataset.why;
+      el("detail-tradeoff").textContent = node.dataset.tradeoff;
+    });
+  });
+  let lastRequest = null;
+  const setResponse = (body, status, ok = true) => {
+    el("response").textContent = typeof body === "string" ? body : JSON.stringify(body, null, 2);
+    el("http-status").textContent = status ? `HTTP ${status}` : "ERRO DE REDE";
+    el("http-status").className = ok ? "http" : "http error";
+  };
+  const call = async (path, options = {}) => {
+    const buttons = [...document.querySelectorAll("button")];
+    buttons.forEach((button) => button.disabled = true);
+    try {
+      const response = await fetch(path, { ...options, headers: { "Content-Type": "application/json", ...(options.headers || {}) } });
+      const text = await response.text();
+      let body;
+      try { body = text ? JSON.parse(text) : null; } catch { body = text; }
+      setResponse(body, response.status, response.ok);
+      return { ok: response.ok, body };
+    } catch (error) {
+      setResponse({ error: error.message, hint: "Confirme que o Docker Compose está ativo e abra esta página por http://localhost:3000/demo." }, null, false);
+      return { ok: false, body: null };
+    } finally { buttons.forEach((button) => button.disabled = false); }
+  };
+  const uuid = () => crypto.randomUUID();
+
+  el("create-wallet").addEventListener("click", async () => {
+    const playerId = uuid();
+    const result = await call("/wallets", { method: "POST", body: JSON.stringify({ playerId, initialBalance: { amount: "100.00", currency: "BRL" } }) });
+    if (result.ok && result.body?.id) {
+      el("wallet-id").value = result.body.id;
+      el("player-id").value = result.body.playerId;
+      lastRequest = null;
+    }
+  });
+
+  const send = async (reuse) => {
+    const walletId = el("wallet-id").value.trim();
+    const playerId = el("player-id").value.trim();
+    if (reuse && !lastRequest) { setResponse({ error: "Envie uma transação primeiro para habilitar o replay." }, 0, false); return; }
+    if (reuse) return call("/wagering/transactions", { method: "POST", headers: { "Idempotency-Key": lastRequest.key }, body: JSON.stringify(lastRequest.payload) });
+    const amount = el("amount").value.trim();
+    if (!walletId || !playerId || !/^\d+\.\d{2}$/.test(amount)) {
+      setResponse({ error: "Informe wallet, player e valor no formato 10.00." }, 0, false); return;
+    }
+    const request = {
+      key: uuid(),
+      payload: {
+        providerId: "demo-provider",
+        externalTransactionId: uuid(),
+        playerId,
+        walletId,
+        roundId: `demo-round-${uuid()}`,
+        gameId: "demo-game",
+        kind: el("kind").value,
+        money: { amount, currency: "BRL" }
+      }
+    };
+    lastRequest = request;
+    await call("/wagering/transactions", { method: "POST", headers: { "Idempotency-Key": request.key }, body: JSON.stringify(request.payload) });
+  };
+  el("send-wager").addEventListener("click", () => send(false));
+  el("replay").addEventListener("click", () => send(true));
+
+  fetch("/health/ready").then((response) => {
+    el("health-dot").className = `dot ${response.ok ? "ok" : "bad"}`;
+    el("health-label").textContent = response.ok ? "API pronta" : `API indisponível · ${response.status}`;
+  }).catch(() => {
+    el("health-dot").className = "dot bad";
+    el("health-label").textContent = "API indisponível";
+  });
+})();
+</script>
+</body>
+</html>

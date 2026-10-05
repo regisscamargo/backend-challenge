@@ -1,0 +1,132 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: ${APP_PORT:?Set APP_PORT in the local .env}
+      DATABASE_URL: ${APP_DATABASE_URL:?Set APP_DATABASE_URL in the local .env}
+      AWS_REGION: ${AWS_REGION:?Set AWS_REGION in the local .env}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?Set local AWS_ACCESS_KEY_ID in the .env}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?Set local AWS_SECRET_ACCESS_KEY in the .env}
+      AWS_ENDPOINT_URL: ${LOCALSTACK_DOCKER_ENDPOINT:?Set LOCALSTACK_DOCKER_ENDPOINT in the local .env}
+      SQS_WAGER_TRANSACTIONS_QUEUE_URL: ${SQS_WAGER_TRANSACTIONS_QUEUE_URL:?Set queue URLs in the local .env}
+      SQS_WAGER_TRANSACTIONS_DLQ_URL: ${SQS_WAGER_TRANSACTIONS_DLQ_URL:?Set queue URLs in the local .env}
+      SQS_WAGER_EVENTS_QUEUE_URL: ${SQS_WAGER_EVENTS_QUEUE_URL:?Set queue URLs in the local .env}
+      WORKERS_ENABLED: ${WORKERS_ENABLED:?Set WORKERS_ENABLED in the local .env}
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:?Set API_HOST_PORT in the local .env}:${APP_PORT:?Set APP_PORT in the local .env}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+      database-provisioner:
+        condition: service_completed_successfully
+      migrator:
+        condition: service_completed_successfully
+      terraform:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    stop_grace_period: 60s
+    init: true
+    healthcheck:
+      test: ["CMD", "bun", "-e", "const r=await fetch('http://127.0.0.1:'+process.env.PORT+'/health/ready');if(!r.ok)process.exit(1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in the local .env}
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER:?Set POSTGRES_ADMIN_USER in the local .env}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Set POSTGRES_ADMIN_PASSWORD in the local .env}
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:?Set POSTGRES_HOST_PORT in the local .env}:5432"
+    volumes:
+      - wagering-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  database-provisioner:
+    image: postgres:16-alpine
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - psql -v ON_ERROR_STOP=1 -h postgres -f /bootstrap/runtime-role.sql
+    environment:
+      PGUSER: ${POSTGRES_ADMIN_USER:?Set POSTGRES_ADMIN_USER in the local .env}
+      PGPASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Set POSTGRES_ADMIN_PASSWORD in the local .env}
+      PGDATABASE: ${POSTGRES_DB:?Set POSTGRES_DB in the local .env}
+      APP_DB_USER: ${APP_DB_USER:?Set APP_DB_USER in the local .env}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in the local .env}
+    volumes:
+      - ./docker/postgres/runtime-role.sql:/bootstrap/runtime-role.sql:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  migrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ["bun", "x", "mikro-orm", "migration:up"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${ADMIN_DATABASE_URL:?Set ADMIN_DATABASE_URL in the local .env}
+      APP_DB_USER: ${APP_DB_USER:?Set APP_DB_USER in the local .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      database-provisioner:
+        condition: service_completed_successfully
+    restart: "no"
+
+  localstack:
+    image: localstack/localstack:3.8.1
+    environment:
+      SERVICES: sqs
+      AWS_DEFAULT_REGION: ${AWS_REGION:?Set AWS_REGION in the local .env}
+      DEBUG: "0"
+    ports:
+      - "127.0.0.1:${LOCALSTACK_HOST_PORT:?Set LOCALSTACK_HOST_PORT in the local .env}:4566"
+    volumes:
+      - localstack-data:/var/lib/localstack
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:4566/_localstack/health >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  terraform:
+    image: hashicorp/terraform:1.9.8
+    working_dir: /workspace
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - terraform init -input=false && terraform apply -auto-approve -input=false -state=/state/terraform.tfstate
+    environment:
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?Set local AWS_ACCESS_KEY_ID in the .env}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?Set local AWS_SECRET_ACCESS_KEY in the .env}
+      AWS_DEFAULT_REGION: ${AWS_REGION:?Set AWS_REGION in the local .env}
+      TF_VAR_aws_region: ${AWS_REGION:?Set AWS_REGION in the local .env}
+      TF_VAR_localstack_sqs_endpoint: ${LOCALSTACK_DOCKER_ENDPOINT:?Set LOCALSTACK_DOCKER_ENDPOINT in the local .env}
+    volumes:
+      - ./infra/terraform:/workspace
+      - terraform-plugins:/workspace/.terraform
+      - terraform-state:/state
+    depends_on:
+      localstack:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  wagering-postgres-data:
+  localstack-data:
+  terraform-plugins:
+  terraform-state:

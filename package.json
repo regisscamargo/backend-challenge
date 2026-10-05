@@ -1,0 +1,46 @@
+{
+  "name": "distributed-wagering-processor",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "bun@1.x",
+  "scripts": {
+    "test": "bun test",
+    "test:unit": "bun test test/unit",
+    "test:messaging": "bun test test/integration/sqs-recovery.integration.test.ts",
+    "test:concurrency": "bun test test/integration/concurrency.integration.test.ts",
+    "test:recovery": "bun test test/integration/crash-recovery.integration.test.ts",
+    "test:compose": "bun test/smoke/docker-compose.smoke.ts",
+    "test:load": "bun scripts/load-test.ts",
+    "start": "bun src/main.ts",
+    "start:dev": "bun --watch src/main.ts",
+    "db:migration:list": "bun x mikro-orm migration:list",
+    "db:migration:up": "bun x mikro-orm migration:up",
+    "db:migration:down": "bun x mikro-orm migration:down"
+  },
+  "dependencies": {
+    "@aws-sdk/client-sqs": "^3.1146.0",
+    "@mikro-orm/core": "^7.2.3",
+    "@mikro-orm/migrations": "^7.2.3",
+    "@mikro-orm/nestjs": "^7.1.0",
+    "@mikro-orm/postgresql": "^7.2.3",
+    "@nestjs/common": "^11.1.6",
+    "@nestjs/core": "^11.1.6",
+    "@nestjs/platform-express": "^11.1.6",
+    "@nestjs/schedule": "^6.0.1",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.2",
+    "decimal.js": "^10.4.3",
+    "pg": "^8.23.1",
+    "prom-client": "^15.1.3",
+    "reflect-metadata": "^0.2.2"
+  },
+  "devDependencies": {
+    "@mikro-orm/cli": "^7.2.3",
+    "@types/bun": "latest",
+    "@types/express": "^5.0.3",
+    "@types/node": "^26.6.4",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.23.15",
+    "typescript": "^5.7.2"
+  }
+}
